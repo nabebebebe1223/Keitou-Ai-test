@@ -17,32 +17,47 @@
 <body>
     <h2>ケイトウ選別カメラ</h2>
     <div id="video-container">
-        <video id="webcam" autoplay playsinline></video>
+        <video id="webcam" autoplay playsinline muted></video>
     </div>
     <div id="result-box">
-        <div id="label">読み込み中...</div>
-        <div id="conf"></div>
+        <div id="label">AI起動中...</div>
+        <div id="conf">カメラを許可してください</div>
     </div>
 
     <script>
         let model;
+        // signature.jsonにあるラベルの順番をここに書く
+        const labels = ["不良", "可", "良"]; 
+
         const video = document.getElementById('webcam');
         const labelDiv = document.getElementById('label');
         const confDiv = document.getElementById('conf');
 
         async function setupWebcam() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-            video.srcObject = stream;
-            return new Promise(resolve => video.onloadedmetadata = resolve);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }, // 外カメラ優先
+                    audio: false 
+                });
+                video.srcObject = stream;
+                return new Promise(resolve => video.onloadedmetadata = resolve);
+            } catch (e) {
+                labelDiv.innerText = "エラー";
+                confDiv.innerText = "カメラの起動に失敗しました。HTTPSで接続しているか確認してください。";
+            }
         }
 
         async function init() {
-            labelDiv.innerText = "AIを起動中...";
-            // Lobeのモデル（model.json）を読み込む
-            model = await tf.loadGraphModel('./model.json');
-            await setupWebcam();
-            labelDiv.innerText = "準備完了";
-            predict();
+            try {
+                // model.jsonを読み込む
+                model = await tf.loadGraphModel('./model.json');
+                await setupWebcam();
+                labelDiv.innerText = "準備完了";
+                predict();
+            } catch (e) {
+                labelDiv.innerText = "読み込みエラー";
+                console.error(e);
+            }
         }
 
         async function predict() {
@@ -53,12 +68,11 @@
             const prediction = await model.predict(batched);
             const scores = await prediction.data();
             
-            // Lobeのsignature.jsonに基づいて結果を表示（※簡易版）
             const maxScore = Math.max(...scores);
             const index = scores.indexOf(maxScore);
             
-            // 本来はsignature.jsonからラベル名を取得しますが、まずはインデックスで表示
-            labelDiv.innerText = "判定結果: " + (maxScore > 0.7 ? "対象発見" : "分析中");
+            // 判定結果を表示
+            labelDiv.innerText = labels[index];
             confDiv.innerText = "確信度: " + Math.round(maxScore * 100) + "%";
 
             requestAnimationFrame(predict);
